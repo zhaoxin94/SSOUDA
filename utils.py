@@ -14,12 +14,11 @@ from common.utils.meter import AverageMeter, ProgressMeter
 
 from data_loader import get_rs_dataset, get_rs_class_name, get_rs_dataset_imgpath
 
+
 def get_model_names():
-    return sorted(
-        name for name in models.__dict__
-        if name.islower() and not name.startswith("__")
-        and callable(models.__dict__[name])
-    ) + timm.list_models()
+    return sorted(name for name in models.__dict__
+                  if name.islower() and not name.startswith("__")
+                  and callable(models.__dict__[name])) + timm.list_models()
 
 
 def get_model(model_name):
@@ -32,44 +31,67 @@ def get_model(model_name):
     return backbone
 
 
-def get_dataset(root, source, target, train_source_transform, val_transform, train_target_transform=None):
+def get_dataset(root,
+                source,
+                target,
+                train_source_transform,
+                val_transform,
+                train_target_transform=None):
     if train_target_transform is None:
         train_target_transform = train_source_transform
 
-    train_source_dataset = get_rs_dataset(root, source=True, dataset_name=source, transform=train_source_transform, appli='train')
-    train_target_dataset = get_rs_dataset(root, source=False, dataset_name=target, transform=train_target_transform, appli='train')
-    val_dataset = get_rs_dataset(root, source=False, dataset_name=target, transform=val_transform, appli='train')
+    train_source_dataset = get_rs_dataset(root,
+                                          source=True,
+                                          dataset_name=source,
+                                          transform=train_source_transform,
+                                          appli='train')
+    train_target_dataset = get_rs_dataset(root,
+                                          source=False,
+                                          dataset_name=target,
+                                          transform=train_target_transform,
+                                          appli='train')
+    val_dataset = get_rs_dataset(root,
+                                 source=False,
+                                 dataset_name=target,
+                                 transform=val_transform,
+                                 appli='train')
     test_dataset = val_dataset
     class_names = get_rs_class_name(target)
     num_classes = len(class_names)
 
     return train_source_dataset, train_target_dataset, val_dataset, test_dataset, num_classes, class_names
 
+
 def get_target_dataset(root, target, val_transform):
-    target_query_dataset = get_rs_dataset_imgpath(root, dataset_name=target, transform=val_transform, appli='test')
-    target_database_dataset = get_rs_dataset_imgpath(root, dataset_name=target, transform=val_transform, appli='database')
+    target_query_dataset = get_rs_dataset_imgpath(root,
+                                                  dataset_name=target,
+                                                  transform=val_transform,
+                                                  appli='test')
+    target_database_dataset = get_rs_dataset_imgpath(root,
+                                                     dataset_name=target,
+                                                     transform=val_transform,
+                                                     appli='database')
     class_names = get_rs_class_name(target)
     num_classes = len(class_names)
     return target_query_dataset, target_database_dataset, num_classes
 
+
 class TwoViewTransform(object):
     def __init__(self):
-        normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        normalize = T.Normalize(mean=[0.485, 0.456, 0.406],
+                                std=[0.229, 0.224, 0.225])
 
         self.weak = T.Compose([
             ResizeImage(256),
             T.CenterCrop(224),
             T.RandomHorizontalFlip(),
-            T.ToTensor(),
-            normalize
+            T.ToTensor(), normalize
         ])
         self.strong = T.Compose([
             ResizeImage(256),
             T.CenterCrop(224),
             T.RandomHorizontalFlip(),
-            T.RandomApply([
-                T.ColorJitter(0.4, 0.4, 0.4, 0.0)
-            ], p=1.0),
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.0)], p=1.0),
             RandAugment(3, 5),
             T.ToTensor(),
             normalize,
@@ -79,6 +101,7 @@ class TwoViewTransform(object):
         weak = self.weak(x)
         strong = self.strong(x)
         return weak, strong
+
 
 def get_val_transform(resizing='default'):
 
@@ -96,20 +119,15 @@ def get_val_transform(resizing='default'):
         ])
     else:
         raise NotImplementedError(resizing)
-    return T.Compose([
-        transform,
-        T.ToTensor()
-    ])
+    return T.Compose([transform, T.ToTensor()])
 
 
 def validate(val_loader, model, args, device) -> float:
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
-    progress = ProgressMeter(
-        len(val_loader),
-        [batch_time, losses, top1],
-        prefix='Test: ')
+    progress = ProgressMeter(len(val_loader), [batch_time, losses, top1],
+                             prefix='Test: ')
 
     # switch to evaluate mode
     model.eval()
@@ -129,7 +147,7 @@ def validate(val_loader, model, args, device) -> float:
             loss = F.cross_entropy(output, target)
 
             # measure accuracy and record loss
-            acc1, = accuracy(output, target, topk=(1,))
+            acc1, = accuracy(output, target, topk=(1, ))
             if confmat:
                 confmat.update(target, output.argmax(1))
             losses.update(loss.item(), images.size(0))

@@ -55,11 +55,20 @@ def main(args: argparse.Namespace):
 
     train_source_dataset, train_target_dataset, val_dataset, test_dataset, num_classes, args.class_names = \
         utils.get_dataset(args.root, args.source, args.target, train_transform, val_transform)
-    train_source_loader = DataLoader(train_source_dataset, batch_size=args.batch_size,
-                                     shuffle=True, num_workers=args.workers, drop_last=True)
-    train_target_loader = DataLoader(train_target_dataset, batch_size=args.batch_size,
-                                     shuffle=True, num_workers=args.workers, drop_last=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+    train_source_loader = DataLoader(train_source_dataset,
+                                     batch_size=args.batch_size,
+                                     shuffle=True,
+                                     num_workers=args.workers,
+                                     drop_last=True)
+    train_target_loader = DataLoader(train_target_dataset,
+                                     batch_size=args.batch_size,
+                                     shuffle=True,
+                                     num_workers=args.workers,
+                                     drop_last=True)
+    val_loader = DataLoader(val_dataset,
+                            batch_size=args.batch_size,
+                            shuffle=False,
+                            num_workers=args.workers)
 
     len_source_loader = len(train_source_loader)
     len_target_loader = len(train_target_loader)
@@ -76,22 +85,34 @@ def main(args: argparse.Namespace):
     print("=> using pre-trained model '{}'".format(args.arch))
     backbone = utils.get_model(args.arch)
     pool_layer = nn.Identity() if args.no_pool else None
-    classifier = ImageClassifier(backbone, num_classes, bottleneck_dim=args.bottleneck_dim,
-                                 pool_layer=pool_layer, finetune=True).to(device)
+    classifier = ImageClassifier(backbone,
+                                 num_classes,
+                                 bottleneck_dim=args.bottleneck_dim,
+                                 pool_layer=pool_layer,
+                                 finetune=True).to(device)
 
     # define optimizer and lr scheduler
-    optimizer = SGD(classifier.get_parameters(), args.lr, momentum=args.momentum, weight_decay=args.wd, nesterov=True)
-    lr_scheduler = LambdaLR(optimizer, lambda x:  args.lr * (1. + args.lr_gamma * float(x)) ** (-args.lr_decay))
+    optimizer = SGD(classifier.get_parameters(),
+                    args.lr,
+                    momentum=args.momentum,
+                    weight_decay=args.wd,
+                    nesterov=True)
+    lr_scheduler = LambdaLR(
+        optimizer, lambda x: args.lr *
+        (1. + args.lr_gamma * float(x))**(-args.lr_decay))
 
     # define loss function
     tdl_loss_fn = SupConLoss(temperature=0.1).cuda()
-    unknown_cst_loss_fn = Unknown_class_detection(num_classes, t1=args.t1, t2=args.t2).cuda()
+    unknown_cst_loss_fn = Unknown_class_detection(num_classes,
+                                                  t1=args.t1,
+                                                  t2=args.t2).cuda()
     known_cst_loss_fn = Known_class_detection(threshold=args.tk).cuda()
 
     # resume from the best checkpoint
     if args.phase != 'train':
         print('load checkpoint: best model')
-        checkpoint = torch.load(logger.get_checkpoint_path('best'), map_location='cpu')
+        checkpoint = torch.load(logger.get_checkpoint_path('best'),
+                                map_location='cpu')
         classifier.load_state_dict(checkpoint)
 
     # image classification test
@@ -105,16 +126,19 @@ def main(args: argparse.Namespace):
     best_acc = 0.
     for epoch in range(args.epochs):
         # train for one epoch
-        train(train_source_iter, train_target_iter, classifier, tdl_loss_fn, unknown_cst_loss_fn, known_cst_loss_fn,
-              optimizer, lr_scheduler, epoch, args)
+        train(train_source_iter, train_target_iter, classifier, tdl_loss_fn,
+              unknown_cst_loss_fn, known_cst_loss_fn, optimizer, lr_scheduler,
+              epoch, args)
 
         # evaluate on validation set
         acc = utils.validate(val_loader, classifier, args, device)
 
         # remember best acc@1 and save checkpoint
-        torch.save(classifier.state_dict(), logger.get_checkpoint_path('latest'))
+        torch.save(classifier.state_dict(),
+                   logger.get_checkpoint_path('latest'))
         if acc > best_acc:
-            shutil.copy(logger.get_checkpoint_path('latest'), logger.get_checkpoint_path('best'))
+            shutil.copy(logger.get_checkpoint_path('latest'),
+                        logger.get_checkpoint_path('best'))
         best_acc = max(acc, best_acc)
 
     print("best_accu = {:.3f}".format(best_acc))
@@ -127,9 +151,11 @@ def main(args: argparse.Namespace):
     logger.close()
 
 
-def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverDataIterator, model: ImageClassifier,
-          tdl_loss_fn: nn.Module, unknown_cst_loss_fn: nn.Module, known_cst_loss_fn: nn.Module, optimizer: SGD,
-          lr_scheduler: LambdaLR, epoch: int, args: argparse.Namespace):
+def train(train_source_iter: ForeverDataIterator,
+          train_target_iter: ForeverDataIterator, model: ImageClassifier,
+          tdl_loss_fn: nn.Module, unknown_cst_loss_fn: nn.Module,
+          known_cst_loss_fn: nn.Module, optimizer: SGD, lr_scheduler: LambdaLR,
+          epoch: int, args: argparse.Namespace):
     batch_time = AverageMeter('Time', ':4.2f')
     data_time = AverageMeter('Data', ':3.1f')
     losses = AverageMeter('Loss', ':3.2f')
@@ -166,7 +192,8 @@ def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverData
         y_t_w, y_t_s = torch.split(y_t, [bsz, bsz], dim=0)
 
         if epoch > args.pretrain_epoch:
-            unknown_cst_loss = unknown_cst_loss_fn(logits_s=y_t_s, logits_w=y_t_w).cuda()
+            unknown_cst_loss = unknown_cst_loss_fn(logits_s=y_t_s,
+                                                   logits_w=y_t_w).cuda()
             known_cst_loss = known_cst_loss_fn(logits_s=y_t_s, logits_w=y_t_w)
         else:
             unknown_cst_loss = torch.tensor([0]).cuda()
@@ -205,72 +232,154 @@ if __name__ == '__main__':
     '''
     python ssouda.py /your_path/SSOUDA_dataset/ -s UCMD -t NWPU -a resnet50 --epochs 60 --seed 1 --log logs/ucmd_nwpu
     '''
-    parser = argparse.ArgumentParser(description='SSOUDA for Openset Domain Adaptation')
+    parser = argparse.ArgumentParser(
+        description='SSOUDA for Openset Domain Adaptation')
     # dataset parameters
-    parser.add_argument('root', metavar='DIR',
-                        help='root path of dataset')
+    parser.add_argument('root', metavar='DIR', help='root path of dataset')
     parser.add_argument('-s', '--source', help='source domain')
     parser.add_argument('-t', '--target', help='target domain')
     parser.add_argument('--train-resizing', type=str, default='default')
     parser.add_argument('--val-resizing', type=str, default='default')
-    parser.add_argument('--resize-size', type=int, default=224,
+    parser.add_argument('--resize-size',
+                        type=int,
+                        default=224,
                         help='the image size after resizing')
-    parser.add_argument('--no-hflip', action='store_true',
+    parser.add_argument('--no-hflip',
+                        action='store_true',
                         help='no random horizontal flipping during training')
-    parser.add_argument('--norm-mean', type=float, nargs='+',
-                        default=(0.485, 0.456, 0.406), help='normalization mean')
-    parser.add_argument('--norm-std', type=float, nargs='+',
-                        default=(0.229, 0.224, 0.225), help='normalization std')
+    parser.add_argument('--norm-mean',
+                        type=float,
+                        nargs='+',
+                        default=(0.485, 0.456, 0.406),
+                        help='normalization mean')
+    parser.add_argument('--norm-std',
+                        type=float,
+                        nargs='+',
+                        default=(0.229, 0.224, 0.225),
+                        help='normalization std')
     # model parameters
-    parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
+    parser.add_argument('-a',
+                        '--arch',
+                        metavar='ARCH',
+                        default='resnet50',
                         choices=utils.get_model_names(),
                         help='backbone architecture: ' +
-                             ' | '.join(utils.get_model_names()) +
-                             ' (default: resnet50)')
-    parser.add_argument('--no-pool', action='store_true',
+                        ' | '.join(utils.get_model_names()) +
+                        ' (default: resnet50)')
+    parser.add_argument('--no-pool',
+                        action='store_true',
                         help='no pool layer after the feature extractor.')
-    parser.add_argument('--bottleneck-dim', default=256, type=int,
+    parser.add_argument('--bottleneck-dim',
+                        default=256,
+                        type=int,
                         help='Dimension of bottleneck')
-    parser.add_argument('--scratch', action='store_true', help='whether train from scratch.')
-    parser.add_argument('--trade-off', default=1., type=float,
+    parser.add_argument('--scratch',
+                        action='store_true',
+                        help='whether train from scratch.')
+    parser.add_argument('--trade-off',
+                        default=1.,
+                        type=float,
                         help='the trade-off hyper-parameter for transfer loss')
     # training parameters
-    parser.add_argument('-b', '--batch-size', default=32, type=int,
+    parser.add_argument('-b',
+                        '--batch-size',
+                        default=32,
+                        type=int,
                         metavar='N',
                         help='mini-batch size (default: 64)')
-    parser.add_argument('--lr', '--learning-rate', default=0.003, type=float,
-                        metavar='LR', help='initial learning rate', dest='lr')
-    parser.add_argument('--lr-gamma', default=0.0003, type=float, help='parameter for lr scheduler')
-    parser.add_argument('--lr-decay', default=0.75, type=float, help='parameter for lr scheduler')
+    parser.add_argument('--lr',
+                        '--learning-rate',
+                        default=0.003,
+                        type=float,
+                        metavar='LR',
+                        help='initial learning rate',
+                        dest='lr')
+    parser.add_argument('--lr-gamma',
+                        default=0.0003,
+                        type=float,
+                        help='parameter for lr scheduler')
+    parser.add_argument('--lr-decay',
+                        default=0.75,
+                        type=float,
+                        help='parameter for lr scheduler')
 
-    parser.add_argument('--pretrain-epoch', default=5, type=int, help='pretrain epoch for discriminative feature learning')
-    parser.add_argument('--w1', default=0.3, type=float, help='parameter for tdl loss weight')
-    parser.add_argument('--w2', default=0.5, type=float, help='parameter for cst loss weight')
-    parser.add_argument('--t1', default=0.009, type=float, help='parameter for unknown class candidate')
-    parser.add_argument('--t2', default=0.35, type=float, help='parameter for unknown class 2nd theshold')
-    parser.add_argument('--tk', default=0.95, type=float, help='parameter for known class detection')
+    parser.add_argument(
+        '--pretrain-epoch',
+        default=5,
+        type=int,
+        help='pretrain epoch for discriminative feature learning')
+    parser.add_argument('--w1',
+                        default=0.3,
+                        type=float,
+                        help='parameter for tdl loss weight')
+    parser.add_argument('--w2',
+                        default=0.5,
+                        type=float,
+                        help='parameter for cst loss weight')
+    parser.add_argument('--t1',
+                        default=0.009,
+                        type=float,
+                        help='parameter for unknown class candidate')
+    parser.add_argument('--t2',
+                        default=0.35,
+                        type=float,
+                        help='parameter for unknown class 2nd theshold')
+    parser.add_argument('--tk',
+                        default=0.95,
+                        type=float,
+                        help='parameter for known class detection')
 
-    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+    parser.add_argument('--momentum',
+                        default=0.9,
+                        type=float,
+                        metavar='M',
                         help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=0.0005, type=float,
-                        metavar='W', help='weight decay (default: 5e-4)')
-    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+    parser.add_argument('--wd',
+                        '--weight-decay',
+                        default=0.0005,
+                        type=float,
+                        metavar='W',
+                        help='weight decay (default: 5e-4)')
+    parser.add_argument('-j',
+                        '--workers',
+                        default=4,
+                        type=int,
+                        metavar='N',
                         help='number of data loading workers (default: 2)')
-    parser.add_argument('--epochs', default=60, type=int, metavar='N',
+    parser.add_argument('--epochs',
+                        default=60,
+                        type=int,
+                        metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('-i', '--iters-per-epoch', default=500, type=int,
+    parser.add_argument('-i',
+                        '--iters-per-epoch',
+                        default=500,
+                        type=int,
                         help='Number of iterations per epoch')
-    parser.add_argument('-p', '--print-freq', default=100, type=int,
-                        metavar='N', help='print frequency (default: 100)')
-    parser.add_argument('--seed', default=None, type=int,
+    parser.add_argument('-p',
+                        '--print-freq',
+                        default=100,
+                        type=int,
+                        metavar='N',
+                        help='print frequency (default: 100)')
+    parser.add_argument('--seed',
+                        default=None,
+                        type=int,
                         help='seed for initializing training. ')
-    parser.add_argument('--per-class-eval', action='store_true',
-                        help='whether output per-class accuracy during evaluation')
-    parser.add_argument("--log", type=str, default='dann',
-                        help="Where to save logs, checkpoints and debugging images.")
-    parser.add_argument("--phase", type=str, default='train', choices=['train', 'test'],
+    parser.add_argument(
+        '--per-class-eval',
+        action='store_true',
+        help='whether output per-class accuracy during evaluation')
+    parser.add_argument(
+        "--log",
+        type=str,
+        default='dann',
+        help="Where to save logs, checkpoints and debugging images.")
+    parser.add_argument("--phase",
+                        type=str,
+                        default='train',
+                        choices=['train', 'test'],
                         help="When phase is 'test', only test the model."
-                             "When phase is 'analysis', only analysis the model.")
+                        "When phase is 'analysis', only analysis the model.")
     args = parser.parse_args()
     main(args)
-
